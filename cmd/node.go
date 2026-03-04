@@ -7,7 +7,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
-	"github.com/aneeshsunganahalli/SentintelCLI/internal"
+	"github.com/aneeshsunganahalli/SentinelCLI/internal"
 )
 
 var history string

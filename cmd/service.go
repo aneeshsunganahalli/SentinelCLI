@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/vinyas-bharadwaj/sentinel/internal"
+	"github.com/aneeshsunganahalli/SentinelCLI/internal"
 )
 
 var watch bool

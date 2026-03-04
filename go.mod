@@ -1,4 +1,4 @@
-module github.com/vinyas-bharadwaj/sentinel
+module github.com/aneeshsunganahalli/SentinelCLI
 
 go 1.24.4
 

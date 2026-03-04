@@ -26,6 +26,6 @@ func Execute() {
 
 func init() {
 	// Persistent flags are available to every subcommand
-	rootCmd.PersistentFlags().StringVar(&prometheusURL, "url", "http://192.168.0.103:9090", "Prometheus server URL")
+	rootCmd.PersistentFlags().StringVar(&prometheusURL, "url", "http://localhost:9090", "Prometheus server URL")
 	rootCmd.Version = Version
 }

@@ -22,24 +22,23 @@ func NewPromClient(address string) (*PromClient, error) {
 	return &PromClient{api: v1.NewAPI(client)}, nil
 }
 
-func (p *PromClient) GetNodeStats(lookback string) ([]ClusterStats, error) {
+// GetNodeCPUStats fetches a pure compute profile for all nodes
+func (p *PromClient) GetNodeCPUStats(lookback string) ([]NodeCPUStats, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Define our PromQL queries
 	queries := map[string]string{
-		"cpu":  fmt.Sprintf("100 - (avg by (instance) (irate(node_cpu_seconds_total{mode='idle'}[%s])) * 100)", lookback),
-		"mem":  "100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))",
-		"disk": "100 * (1 - (node_filesystem_avail_bytes{mountpoint='/'} / node_filesystem_size_bytes{mountpoint='/'}))",
+		"utilization": fmt.Sprintf("100 - (avg by (instance) (irate(node_cpu_seconds_total{mode='idle'}[%s])) * 100)", lookback),
+		"load1m":      "node_load1",
+		"throttles":   fmt.Sprintf("sum by (instance) (increase(node_cpu_core_throttles_total[%s]))", lookback),
 	}
 
-	// This map will store our combined data, keyed by NodeName
-	registry := make(map[string]*ClusterStats)
+	registry := make(map[string]*NodeCPUStats)
 
 	for metricType, query := range queries {
 		result, _, err := p.api.Query(ctx, query, time.Now())
 		if err != nil {
-			return nil, err
+			continue // Skip if a specific metric fails, but keep processing others
 		}
 
 		vector, ok := result.(model.Vector)
@@ -49,50 +48,46 @@ func (p *PromClient) GetNodeStats(lookback string) ([]ClusterStats, error) {
 
 		for _, sample := range vector {
 			nodeName := string(sample.Metric["instance"])
-
-			// If node isn't in our registry yet, create it
 			if _, exists := registry[nodeName]; !exists {
-				registry[nodeName] = &ClusterStats{NodeName: nodeName}
+				registry[nodeName] = &NodeCPUStats{NodeName: nodeName}
 			}
 
-			// Assign the value to the correct field
 			val := float64(sample.Value)
 			switch metricType {
-			case "cpu":
-				registry[nodeName].CPUUsage = val
-			case "mem":
-				registry[nodeName].MemUsage = val
-			case "disk":
-				registry[nodeName].DiskUsage = val
+			case "utilization":
+				registry[nodeName].Utilization = val
+			case "load1m":
+				registry[nodeName].Load1m = val
+			case "throttles":
+				registry[nodeName].Throttles = val
 			}
 		}
 	}
 
-	// Convert map to slice for the UI
-	var finalStats []ClusterStats
+	var finalStats []NodeCPUStats
 	for _, v := range registry {
 		finalStats = append(finalStats, *v)
 	}
 	return finalStats, nil
 }
 
-func (p *PromClient) GetServiceStats(service string) ([]ServiceStats, error) {
+// GetServiceCPUStats fetches compute load for specific services
+func (p *PromClient) GetServiceCPUStats(service string) ([]ServiceCPUStats, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	var query string
-	var metricLabel string
+	var entityLabel string
+	var description string
 
 	switch service {
-	case "kafka":
-		query = "sum(kafka_consumergroup_lag) by (consumergroup)"
-		metricLabel = "consumergroup"
 	case "opensearch":
-		query = "opensearch_cluster_status"
-		metricLabel = "cluster"
-	case "logstash":
-		query = "sum(logstash_stats_events_out) by (instance)"
-		metricLabel = "instance"
+		query = "opensearch_os_load_average_one_minute"
+		entityLabel = "cluster" // or "instance" depending on your exact labels
+		description = "1m OS Load Average (JVM Proxy)"
+	case "kafka", "logstash":
+		// Being candid: Since the exporters lack CPU metrics, we return an explicit error
+		return nil, fmt.Errorf("CPU metrics are not currently exported by the %s exporter", service)
 	default:
 		return nil, fmt.Errorf("unsupported service: %s", service)
 	}
@@ -103,50 +98,21 @@ func (p *PromClient) GetServiceStats(service string) ([]ServiceStats, error) {
 	}
 
 	vector, ok := result.(model.Vector)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response format")
+	if !ok || len(vector) == 0 {
+		return nil, fmt.Errorf("no CPU metrics found for %s", service)
 	}
 
-	var stats []ServiceStats
+	var stats []ServiceCPUStats
 	for _, sample := range vector {
-		val := float64(sample.Value)
-		metricName := string(sample.Metric[model.LabelName(metricLabel)])
-
-		// Default values
-		status := "Active"
-		unit := "count"
-		description := "Generic Metric"
-
-		// --- Verbosity Enrichment Layer ---
-		switch service {
-		case "kafka":
-			unit = "messages"
-			description = "Consumer group lag (backlog)"
-			if val > 5000 {
-				status = "Warning"
-			} else {
-				status = "Healthy"
-			}
-
-		case "opensearch":
-			unit = "code"
-			// OpenSearch Status: 0=Green, 1=Yellow, 2=Red
-			statusMap := map[float64]string{0: "OK", 1: "WARN", 2: "CRIT"}
-			descMap := map[float64]string{0: "Green (Healthy)", 1: "Yellow (Missing Replicas)", 2: "Red (Data Loss)"}
-			status = statusMap[val]
-			description = descMap[val]
-
-		case "logstash":
-			unit = "events"
-			description = "Total events processed (Cumulative)"
+		labelValue := string(sample.Metric[model.LabelName(entityLabel)])
+		if labelValue == "" {
+			labelValue = "cluster-wide"
 		}
 
-		stats = append(stats, ServiceStats{
+		stats = append(stats, ServiceCPUStats{
 			ServiceName: service,
-			MetricName:  metricName,
-			Value:       val,
-			Status:      status,
-			Unit:        unit,
+			EntityName:  labelValue,
+			LoadValue:   float64(sample.Value),
 			Description: description,
 		})
 	}

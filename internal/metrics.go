@@ -1,28 +1,18 @@
 package internal
 
-import "time"
 
-// ClusterStats holds the unified metrics for our HPC nodes
-type ClusterStats struct {
-	NodeName  string
-	CPUUsage  float64
-	MemUsage  float64 // Percentage used
-	DiskUsage float64 // Percentage used
-	Timestamp time.Time
+// NodeCPUStats holds the compute profile for an HPC node
+type NodeCPUStats struct {
+	NodeName    string
+	Utilization float64 // CPU % usage
+	Load1m      float64 // 1-minute load average
+	Throttles   float64 // Core throttles in the last 5m
 }
 
-// ServiceStats represents health for Kafka, Logstash, or OpenSearch
-type ServiceStats struct {
+// ServiceCPUStats holds the compute profile for a specific service
+type ServiceCPUStats struct {
 	ServiceName string
-	MetricName  string // e.g., "logstash-hpc-consumer"
-	Value       float64
-	Status      string // "HEALTHY", "DEGRADED", "CRITICAL"
-	Unit        string // "messages", "events/s", "status-code"
-	Description string // Human readable explanation
-}
-
-// Provider defines the interface for fetching data.
-// This makes it easy to mock for tests later!
-type Provider interface {
-	GetNodeStats(lookback string) ([]ClusterStats, error)
+	EntityName  string
+	LoadValue   float64
+	Description string
 }

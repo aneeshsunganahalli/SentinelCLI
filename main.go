@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/vinyas-bharadwaj/sentinel/cmd"
+	"github.com/aneeshsunganahalli/SentinelCLI"
 )
 
 func main() {
